@@ -11,7 +11,6 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
@@ -151,7 +150,7 @@ public class Node implements NodeInterface {
 
     public void setNodeName(String nodeName) throws Exception {
         this.nodeName = nodeName;
-        this.nodeHashID = computeHashID(nodeName);
+        this.nodeHashID = HashID.computeHashID(nodeName);
     }
 
     public void openPort(int portNumber) throws Exception {
@@ -222,7 +221,7 @@ public class Node implements NodeInterface {
     public boolean exists(String key) throws Exception {
         handleIncomingMessages(1);
         if (store.containsKey(key)) return true;
-        List<String[]> closest = getClosestKnownNodes(computeHashID(key), 3);
+        List<String[]> closest = getClosestKnownNodes(HashID.computeHashID(key), 3);
         for (String[] entry : closest) {
             String addr = entry[1];
             String[] parts = addr.split(":");
@@ -246,7 +245,7 @@ public class Node implements NodeInterface {
     public String read(String key) throws Exception {
         handleIncomingMessages(1);
         if (store.containsKey(key)) return store.get(key);
-        List<String[]> closest = getClosestKnownNodes(computeHashID(key), 3);
+        List<String[]> closest = getClosestKnownNodes(HashID.computeHashID(key), 3);
         for (String[] entry : closest) {
             String addr = entry[1];
             String[] parts = addr.split(":");
@@ -271,7 +270,7 @@ public class Node implements NodeInterface {
 
     public boolean write(String key, String value) throws Exception {
         handleIncomingMessages(1);
-        byte[] keyHash = computeHashID(key);
+        byte[] keyHash = HashID.computeHashID(key);
         List<String[]> closest = getClosestKnownNodes(keyHash, 3);
         boolean anySuccess = false;
         for (String[] entry : closest) {
@@ -301,7 +300,7 @@ public class Node implements NodeInterface {
 
     public boolean CAS(String key, String currentValue, String newValue) throws Exception {
         handleIncomingMessages(1);
-        byte[] keyHash = computeHashID(key);
+        byte[] keyHash = HashID.computeHashID(key);
         List<String[]> closest = getClosestKnownNodes(keyHash, 3);
         for (String[] entry : closest) {
             String addr = entry[1];
@@ -368,7 +367,7 @@ public class Node implements NodeInterface {
                 default:  break;
             }
         } catch (Exception e) {
-            // Robustness: never crash on a malformed message
+            // never crash on a malformed message
         }
     }
 
@@ -383,7 +382,7 @@ public class Node implements NodeInterface {
     }
 
     private void handleNearestRequest(String txid, String rest, InetAddress ip, int port) throws Exception {
-        // N + hashID -> O + up to 3 closest address pairs
+
         String hashHex = rest.trim();
         if (hashHex.length() != 64) return;
         byte[] targetHash = hexToBytes(hashHex);
@@ -398,12 +397,12 @@ public class Node implements NodeInterface {
     }
 
     private void handleExistenceRequest(String txid, String rest, InetAddress ip, int port) throws Exception {
-        // E + key -> F + (Y | N | ?)
+
         int[] pos = new int[]{0};
         String key = decodeStringAt(rest, pos);
         if (key == null) return;
         boolean hasKey = store.containsKey(key);
-        boolean isClose = isOneOfThreeClosest(computeHashID(key));
+        boolean isClose = isOneOfThreeClosest(HashID.computeHashID(key));
         String code;
         if (hasKey) code = "Y";
         else if (isClose) code = "N";
@@ -413,12 +412,12 @@ public class Node implements NodeInterface {
     }
 
     private void handleReadRequest(String txid, String rest, InetAddress ip, int port) throws Exception {
-        // R + key -> S + (Y + value | N | ?)
+
         int[] pos = new int[]{0};
         String key = decodeStringAt(rest, pos);
         if (key == null) return;
         boolean hasKey = store.containsKey(key);
-        boolean isClose = isOneOfThreeClosest(computeHashID(key));
+        boolean isClose = isOneOfThreeClosest(HashID.computeHashID(key));
         String response;
         if (hasKey) {
             response = txid + " S Y " + encodeString(store.get(key)) + " ";
@@ -431,7 +430,7 @@ public class Node implements NodeInterface {
     }
 
     private void handleWriteRequest(String txid, String rest, InetAddress ip, int port) throws Exception {
-        // W + key + value -> X + (A | R | X)
+
         int[] pos = new int[]{0};
         String key = decodeStringAt(rest, pos);
         if (key == null) return;
@@ -439,7 +438,7 @@ public class Node implements NodeInterface {
         if (value == null) return;
 
         boolean hasKey = store.containsKey(key);
-        boolean isClose = isOneOfThreeClosest(computeHashID(key));
+        boolean isClose = isOneOfThreeClosest(HashID.computeHashID(key));
         String code;
         if (hasKey) {
             store.put(key, value);
@@ -458,7 +457,7 @@ public class Node implements NodeInterface {
     }
 
     private void handleCASRequest(String txid, String rest, InetAddress ip, int port) throws Exception {
-        // C + key + requestedValue + newValue -> D + (R | N | A | X)
+
         int[] pos = new int[]{0};
         String key = decodeStringAt(rest, pos);
         if (key == null) return;
@@ -467,7 +466,7 @@ public class Node implements NodeInterface {
         String newValue = decodeStringAt(rest, pos);
         if (newValue == null) return;
 
-        boolean isClose = isOneOfThreeClosest(computeHashID(key));
+        boolean isClose = isOneOfThreeClosest(HashID.computeHashID(key));
         String code;
         synchronized (store) {
             boolean hasKey = store.containsKey(key);
@@ -490,9 +489,9 @@ public class Node implements NodeInterface {
         sendRaw(response, ip, port);
     }
 
-    // FIX 3: Added hopCount parameter to guard against infinite relay loops
+
     private void handleRelayRequest(String txid, String rest, InetAddress senderIP, int senderPort, int hopCount) {
-        // V + nodeName + embedded message - must be non-blocking
+
         if (hopCount >= MAX_RELAY_HOPS) return;
         String capturedRest = rest;
         String capturedTxid = txid;
@@ -528,7 +527,7 @@ public class Node implements NodeInterface {
                 String forwarded = capturedTxid + response.substring(2);
                 sendRaw(forwarded, capturedIP, capturedPort);
             } catch (Exception e) {
-                // Robustness: do not crash
+
             }
         });
         t.setDaemon(true);
@@ -621,7 +620,7 @@ public class Node implements NodeInterface {
         if (addressBook.containsKey(targetName)) {
             return addressBook.get(targetName);
         }
-        byte[] targetHash = computeHashID(targetName);
+        byte[] targetHash = HashID.computeHashID(targetName);
         List<String[]> candidates = getClosestKnownNodes(targetHash, 3);
         for (String[] entry : candidates) {
             String addr = entry[1];
@@ -662,12 +661,12 @@ public class Node implements NodeInterface {
             return;
         }
         try {
-            byte[] targetHash = computeHashID(name);
+            byte[] targetHash = HashID.computeHashID(name);
             int dist = distance(nodeHashID, targetHash);
             int count = 0;
             for (String n : addressBook.keySet()) {
                 try {
-                    int d = distance(nodeHashID, computeHashID(n));
+                    int d = distance(nodeHashID, HashID.computeHashID(n));
                     if (d == dist) count++;
                 } catch (Exception e) { /* ignore */ }
             }
@@ -681,7 +680,7 @@ public class Node implements NodeInterface {
         List<String[]> result = new ArrayList<>();
         for (ConcurrentHashMap.Entry<String, String> entry : addressBook.entrySet()) {
             try {
-                byte[] h = computeHashID(entry.getKey());
+                byte[] h = HashID.computeHashID(entry.getKey());
                 int dist = distance(targetHash, h);
                 result.add(new String[]{entry.getKey(), entry.getValue(), String.valueOf(dist)});
             } catch (Exception e) { /* skip */ }
@@ -695,17 +694,29 @@ public class Node implements NodeInterface {
     }
 
     private boolean isOneOfThreeClosest(byte[] keyHash) {
-        int myDist = distance(nodeHashID, keyHash);
-        int strictlyCloser = 0;
-        for (ConcurrentHashMap.Entry<String, String> entry : addressBook.entrySet()) {
-            try {
-                if (entry.getKey().equals(nodeName)) continue;
-                byte[] h = computeHashID(entry.getKey());
-                int d = distance(h, keyHash);
-                if (d < myDist) strictlyCloser++;
-            } catch (Exception e) { /* ignore */ }
+        try {
+            int myDist = distance(this.nodeHashID, keyHash);
+            int strictlyCloser = 0;
+
+            for (String knownName : addressBook.keySet()) {
+                // Skip comparing against yourself
+                if (knownName.equals(this.nodeName)) continue;
+
+                // Use the official HashID class
+                byte[] otherHash = HashID.computeHashID(knownName);
+                int otherDist = distance(otherHash, keyHash);
+
+                if (otherDist < myDist) {
+                    strictlyCloser++;
+                }
+            }
+
+            // If 3 or more nodes are strictly closer, you are at best the 4th closest
+            return strictlyCloser < 3;
+        } catch (Exception e) {
+            // prevent the node from crashing on a hashing error
+            return false;
         }
-        return strictlyCloser < 3;
     }
 
     private boolean shouldStore(byte[] keyHash) {
@@ -737,18 +748,14 @@ public class Node implements NodeInterface {
     }
 
     private String decodeString(String encoded) {
-        // encoded = "<N> <string>"
+
         int firstSpace = encoded.indexOf(' ');
         if (firstSpace == -1) return "";
         return encoded.substring(firstSpace + 1);
     }
 
-    // FIX 1: Decode a string from position pos[0] inside s, advance pos past it.
-    // RFC format: count SPACE value SPACE(delimiter)
-    // count = number of space characters inside the value itself.
-    // We read characters until we have seen exactly `count` internal spaces,
-    // then stop. The next character is the trailing delimiter space which
-    // belongs to the message framing - we skip it and advance pos past it.
+
+
     private String decodeStringAt(String s, int[] pos) {
         if (pos[0] >= s.length()) return null;
         int start = pos[0];
@@ -769,7 +776,7 @@ public class Node implements NodeInterface {
         while (idx < s.length()) {
             if (s.charAt(idx) == ' ') {
                 if (spacesFound == count) {
-                    // This space is the trailing delimiter - stop before it
+
                     break;
                 }
                 spacesFound++;
@@ -787,31 +794,27 @@ public class Node implements NodeInterface {
     // Hash and distance helpers
     // =========================================================================
 
-    private byte[] computeHashID(String s) throws Exception {
-        MessageDigest md = MessageDigest.getInstance("SHA-256");
-        md.update(s.getBytes(StandardCharsets.UTF_8));
-        return md.digest();
-    }
 
-    // FIX 4: Distance = 256 minus the number of matching leading bits.
-    // XOR gives differing bits; we count leading zeros in the XOR result.
+
     private int distance(byte[] a, byte[] b) {
-        int matching = 0;
-        for (int i = 0; i < a.length && i < b.length; i++) {
+        int matchingBits = 0;
+        // Iterate through each byte of the 32-byte (256-bit) hashes
+        for (int i = 0; i < 32; i++) {
+            // XOR shows which bits are different (0 if same, 1 if different)
             int xor = (a[i] & 0xFF) ^ (b[i] & 0xFF);
+
             if (xor == 0) {
-                matching += 8;
+                // All 8 bits in this byte match
+                matchingBits += 8;
             } else {
-                // Count leading zero bits in this xor byte
-                int msb = 7;
-                while (msb >= 0 && ((xor >> msb) & 1) == 0) {
-                    matching++;
-                    msb--;
-                }
-                break;
+
+                int leadingZerosInByte = Integer.numberOfLeadingZeros(xor) - 24;
+                matchingBits += leadingZerosInByte;
+                break; // Stop at the first difference
             }
         }
-        return 256 - matching;
+        // The protocol defines distance as 256 minus the prefix match
+        return 256 - matchingBits;
     }
 
     private String bytesToHex(byte[] bytes) {
@@ -836,9 +839,6 @@ public class Node implements NodeInterface {
     // Transaction ID helpers
     // =========================================================================
 
-    // FIX 2: Generate a 2-byte txid where NEITHER byte is ever 0x20 (space).
-    // We use a simple counter and map it to the safe range 0x21..0xFF for
-    // each byte independently, giving 222*222 = 49284 unique IDs before wrap.
     private synchronized String nextTxID() {
         int a = txCounter;
         txCounter = (txCounter + 1) % (0xDE * 0xDE);
@@ -864,9 +864,6 @@ public class Node implements NodeInterface {
     // Network interface helper
     // =========================================================================
 
-    // FIX 5: Return the first non-loopback IPv4 address so that traffic is
-    // visible on the real network interface (needed for Wireshark captures
-    // between nodes on different machines / Azure VMs).
     private String getLocalAddress() {
         try {
             List<NetworkInterface> interfaces = Collections.list(NetworkInterface.getNetworkInterfaces());
@@ -886,4 +883,5 @@ public class Node implements NodeInterface {
             return "127.0.0.1";
         }
     }
+
 }
