@@ -157,8 +157,7 @@ public class Node implements NodeInterface {
         this.portNumber = portNumber;
         this.socket = new DatagramSocket(portNumber);
         this.socket.setSoTimeout(100);
-        // FIX 5: Use the real non-loopback network address so Wireshark can
-        // capture traffic between nodes on different machines.
+
         String addr = getLocalAddress() + ":" + portNumber;
         store.put(nodeName, addr);
         addressBook.put(nodeName, addr);
@@ -344,7 +343,7 @@ public class Node implements NodeInterface {
             if (msg.length() < 4) return;
             if (msg.charAt(2) != ' ') return;
             String txid = msg.substring(0, 2);
-            // FIX 2: Guard - neither txid byte may be a space (0x20)
+
             if (txid.charAt(0) == ' ' || txid.charAt(1) == ' ') return;
             char type = msg.charAt(3);
             String rest = msg.length() > 5 ? msg.substring(5) : "";
