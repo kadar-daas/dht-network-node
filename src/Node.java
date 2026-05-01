@@ -31,7 +31,7 @@ interface NodeInterface {
     /* These methods configure your node.
      * They must both be called once after the node has been created but
      * before it is used. */
-    
+
     // Set the name of the node.
     public void setNodeName(String nodeName) throws Exception;
 
@@ -48,7 +48,7 @@ interface NodeInterface {
     // there are no new incoming messages return.
     // If delay is zero then wait for an unlimited amount of time.
     public void handleIncomingMessages(int delay) throws Exception;
-    
+
     // Determines if a node can be contacted and is responding correctly.
     // Handles any messages that have arrived.
     public boolean isActive(String nodeName) throws Exception;
@@ -56,14 +56,14 @@ interface NodeInterface {
     // You need to keep a stack of nodes that are used to relay messages.
     // The base of the stack is the first node to be used as a relay.
     // The first node must relay to the second node and so on.
-    
+
     // Adds a node name to a stack of nodes used to relay all future messages.
     public void pushRelay(String nodeName) throws Exception;
 
     // Pops the top entry from the stack of nodes used for relaying.
     // No effect if the stack is empty
     public void popRelay() throws Exception;
-    
+
 
     /*
      * These methods provide access to the basic functionality of
@@ -73,7 +73,7 @@ interface NodeInterface {
     // Checks if there is an entry in the network with the given key.
     // Handles any messages that have arrived.
     public boolean exists(String key) throws Exception;
-    
+
     // Reads the entry stored in the network for key.
     // If there is a value, return it.
     // If there isn't a value, return null.
@@ -379,6 +379,26 @@ public class Node implements NodeInterface {
         // G -> H + nodeName
         String response = txid + " H " + encodeString(nodeName) + " ";
         sendRaw(response, ip, port);
+        // Passive mapping: learn the sender's name and address in a background thread
+        InetAddress capturedIP = ip;
+        int capturedPort = port;
+        Thread t = new Thread(() -> {
+            try {
+                String askTxid = nextTxID();
+                String askMsg = askTxid + " G ";
+                String askResponse = sendWithRetryDirect(askTxid, askMsg, capturedIP, capturedPort);
+                if (askResponse == null) return;
+                String payload = stripTxAndType(askResponse, askTxid, 'H');
+                if (payload == null) return;
+                String senderName = decodeString(payload.trim());
+                if (senderName != null && senderName.startsWith("N:")) {
+                    String senderAddr = capturedIP.getHostAddress() + ":" + capturedPort;
+                    learnAddress(senderName, senderAddr);
+                }
+            } catch (Exception e) { /* ignore */ }
+        });
+        t.setDaemon(true);
+        t.start();
     }
 
     private void handleNearestRequest(String txid, String rest, InetAddress ip, int port) throws Exception {

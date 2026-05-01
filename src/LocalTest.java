@@ -23,6 +23,7 @@ import java.util.ArrayList;
 
 class LocalTest {
     public static void main (String [] args) {
+
 	try {
 	    int numberOfNodes = 2;
 
@@ -122,7 +123,8 @@ class LocalTest {
 		System.out.println("All tests worked -- that's a good start!");
 	    }
 	    
-	} catch (Exception e) {
+	}
+	catch (Exception e) {
 	    System.err.println("Exception during localTest");
 	    e.printStackTrace(System.err);
 	    return;
